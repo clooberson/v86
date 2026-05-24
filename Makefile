@@ -50,9 +50,10 @@ release: $(DIST_DIR) wasm
 debug: $(BUILD_DIR) wasm-debug
 	@echo "Debug build complete"
 
-# Serve locally for development (requires python3)
+# Serve locally for development
+# I use port 8000 since 8080 conflicts with other stuff I run locally
 serve:
-	python3 -m http.server 8080
+	python3 -m http.server 8000
 
 # Clean build artifacts
 clean:
