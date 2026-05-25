@@ -15,7 +15,7 @@
     {
         // Default configuration
         this.settings = {
-            memory_size: 64 * 1024 * 1024,  // bumped to 64MB, 32MB was too tight for most OSes I tried
+            memory_size: 128 * 1024 * 1024,  // bumped to 128MB, 64MB still too tight for some distros
             vga_memory_size: 8 * 1024 * 1024, // 8MB VGA memory
             boot_order: 0x213,
             network_relay_url: "",
@@ -115,8 +115,4 @@
     {
         this._running = false;
         this._emit("stopped", {});
-        console.log("[v86] Emulator stopped");
-    };
-
-    /**
-     * Regi
+        console.log("[v86] Emu
