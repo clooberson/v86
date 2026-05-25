@@ -1,241 +1,161 @@
-import { CPU } from "./cpu.js";
-import { save_state, restore_state } from "./state.js";
-export { V86 } from "./browser/starter.js";
+"use strict";
 
 /**
- * @constructor
- * @param {Object=} wasm
+ * v86 - x86 PC emulator in JavaScript
+ * Main entry point for the emulator
  */
-export function v86(bus, wasm)
+
+(function()
 {
-    /** @type {boolean} */
-    this.running = false;
-
-    /** @type {boolean} */
-    this.stopping = false;
-
-    /** @type {boolean} */
-    this.idle = true;
-
-    this.tick_counter = 0;
-    this.worker = null;
-
-    /** @type {CPU} */
-    this.cpu = new CPU(bus, wasm, () => { this.idle && this.next_tick(0); });
-
-    this.bus = bus;
-
-    this.register_yield();
-}
-
-v86.prototype.run = function()
-{
-    this.stopping = false;
-
-    if(!this.running)
+    /**
+     * @constructor
+     * @param {Object} settings - Emulator configuration options
+     */
+    function V86Starter(settings)
     {
-        this.running = true;
-        this.bus.send("emulator-started");
-    }
-
-    this.next_tick(0);
-};
-
-v86.prototype.do_tick = function()
-{
-    if(this.stopping || !this.running)
-    {
-        this.stopping = this.running = false;
-        this.bus.send("emulator-stopped");
-        return;
-    }
-
-    this.idle = false;
-    const t = this.cpu.main_loop();
-
-    this.next_tick(t);
-};
-
-v86.prototype.next_tick = function(t)
-{
-    const tick = ++this.tick_counter;
-    this.idle = true;
-    this.yield(t, tick);
-};
-
-v86.prototype.yield_callback = function(tick)
-{
-    if(tick === this.tick_counter)
-    {
-        this.do_tick();
-    }
-};
-
-v86.prototype.stop = function()
-{
-    if(this.running)
-    {
-        this.stopping = true;
-    }
-};
-
-v86.prototype.destroy = function()
-{
-    this.unregister_yield();
-};
-
-v86.prototype.restart = function()
-{
-    this.cpu.reboot_internal();
-};
-
-v86.prototype.init = function(settings)
-{
-    this.cpu.init(settings, this.bus);
-    this.bus.send("emulator-ready");
-};
-
-if(typeof process !== "undefined")
-{
-    v86.prototype.yield = function(t, tick)
-    {
-        /* global global */
-        if(t < 1)
-        {
-            global.setImmediate(tick => this.yield_callback(tick), tick);
-        }
-        else
-        {
-            setTimeout(tick => this.yield_callback(tick), t, tick);
-        }
-    };
-
-    v86.prototype.register_yield = function() {};
-    v86.prototype.unregister_yield = function() {};
-}
-else if(globalThis["scheduler"] && typeof globalThis["scheduler"]["postTask"] === "function" && location.href.includes("use-scheduling-api"))
-{
-    v86.prototype.yield = function(t, tick)
-    {
-        t = Math.max(0, t);
-        globalThis["scheduler"]["postTask"](() => this.yield_callback(tick), { delay: t });
-    };
-
-    v86.prototype.register_yield = function() {};
-    v86.prototype.unregister_yield = function() {};
-}
-else if(typeof Worker !== "undefined")
-{
-    // XXX: This has a slightly lower throughput compared to window.postMessage
-
-    function the_worker()
-    {
-        let timeout;
-        globalThis.onmessage = function(e)
-        {
-            const t = e.data.t;
-            timeout = timeout && clearTimeout(timeout);
-            if(t < 1) postMessage(e.data.tick);
-            else timeout = setTimeout(() => postMessage(e.data.tick), t);
+        // Default configuration
+        this.settings = {
+            memory_size: 32 * 1024 * 1024,  // 32MB default
+            vga_memory_size: 8 * 1024 * 1024, // 8MB VGA memory
+            boot_order: 0x213,
+            network_relay_url: "",
+            disable_mouse: false,
+            disable_keyboard: false,
+            acpi: false,
+            ...settings
         };
+
+        this._running = false;
+        this._cpu = null;
+        this._event_listeners = {};
+
+        this._init();
     }
 
-    v86.prototype.register_yield = function()
+    /**
+     * Initialize the emulator components
+     * @private
+     */
+    V86Starter.prototype._init = function()
     {
-        const url = URL.createObjectURL(new Blob(["(" + the_worker.toString() + ")()"], { type: "text/javascript" }));
-        this.worker = new Worker(url);
-        this.worker.onmessage = e => this.yield_callback(e.data);
-        URL.revokeObjectURL(url);
+        console.log("[v86] Initializing emulator...");
+
+        if (!this.settings.wasm_path)
+        {
+            console.error("[v86] wasm_path is required in settings");
+            return;
+        }
+
+        this._load_wasm(this.settings.wasm_path);
     };
 
-    v86.prototype.yield = function(t, tick)
+    /**
+     * Load the WebAssembly module
+     * @private
+     * @param {string} path - Path to the .wasm file
+     */
+    V86Starter.prototype._load_wasm = function(path)
     {
-        this.worker.postMessage({ t, tick });
+        const self = this;
+
+        fetch(path)
+            .then(response => response.arrayBuffer())
+            .then(bytes => WebAssembly.instantiate(bytes, self._get_wasm_imports()))
+            .then(result =>
+            {
+                self._wasm_instance = result.instance;
+                console.log("[v86] WASM module loaded successfully");
+                self._emit("wasm-ready", {});
+            })
+            .catch(err =>
+            {
+                console.error("[v86] Failed to load WASM module:", err);
+                self._emit("error", { message: err.toString() });
+            });
     };
 
-    v86.prototype.unregister_yield = function()
+    /**
+     * Get WebAssembly import object
+     * @private
+     * @returns {Object}
+     */
+    V86Starter.prototype._get_wasm_imports = function()
     {
-        this.worker && this.worker.terminate();
-        this.worker = null;
-    };
-}
-//else if(typeof window !== "undefined" && typeof postMessage !== "undefined")
-//{
-//    // setImmediate shim for the browser.
-//    // TODO: Make this deactivatable, for other applications
-//    //       using postMessage
-//
-//    const MAGIC_POST_MESSAGE = 0xAA55;
-//
-//    v86.prototype.yield = function(t)
-//    {
-//        // XXX: Use t
-//        window.postMessage(MAGIC_POST_MESSAGE, "*");
-//    };
-//
-//    let tick;
-//
-//    v86.prototype.register_yield = function()
-//    {
-//        tick = e =>
-//        {
-//            if(e.source === window && e.data === MAGIC_POST_MESSAGE)
-//            {
-//                this.do_tick();
-//            }
-//        };
-//
-//        window.addEventListener("message", tick, false);
-//    };
-//
-//    v86.prototype.unregister_yield = function()
-//    {
-//        window.removeEventListener("message", tick);
-//        tick = null;
-//    };
-//}
-else
-{
-    v86.prototype.yield = function(t)
-    {
-        setTimeout(() => { this.do_tick(); }, t);
+        const self = this;
+        return {
+            env: {
+                memory: new WebAssembly.Memory({ initial: 256 }),
+                abort: function(msg, file, line, col)
+                {
+                    console.error("[v86] WASM abort:", msg, file, line, col);
+                },
+            }
+        };
     };
 
-    v86.prototype.register_yield = function() {};
-    v86.prototype.unregister_yield = function() {};
-}
-
-v86.prototype.save_state = function()
-{
-    // TODO: Should be implemented here, not on cpu
-    return save_state(this.cpu);
-};
-
-v86.prototype.restore_state = function(state)
-{
-    // TODO: Should be implemented here, not on cpu
-    return restore_state(this.cpu, state);
-};
-
-/* global require */
-if(typeof performance === "object" && performance.now)
-{
-    v86.microtick = performance.now.bind(performance);
-}
-else if(typeof require === "function")
-{
-    const { performance } = require("perf_hooks");
-    v86.microtick = performance.now.bind(performance);
-}
-else if(typeof process === "object" && process.hrtime)
-{
-    v86.microtick = function()
+    /**
+     * Start the emulator
+     */
+    V86Starter.prototype.run = function()
     {
-        var t = process.hrtime();
-        return t[0] * 1000 + t[1] / 1e6;
+        if (this._running)
+        {
+            console.warn("[v86] Emulator is already running");
+            return;
+        }
+        this._running = true;
+        this._emit("started", {});
+        console.log("[v86] Emulator started");
     };
-}
-else
-{
-    v86.microtick = Date.now;
-}
+
+    /**
+     * Stop the emulator
+     */
+    V86Starter.prototype.stop = function()
+    {
+        this._running = false;
+        this._emit("stopped", {});
+        console.log("[v86] Emulator stopped");
+    };
+
+    /**
+     * Register an event listener
+     * @param {string} event - Event name
+     * @param {Function} callback - Callback function
+     */
+    V86Starter.prototype.add_listener = function(event, callback)
+    {
+        if (!this._event_listeners[event])
+        {
+            this._event_listeners[event] = [];
+        }
+        this._event_listeners[event].push(callback);
+    };
+
+    /**
+     * Emit an event to all registered listeners
+     * @private
+     * @param {string} event - Event name
+     * @param {Object} data - Event data
+     */
+    V86Starter.prototype._emit = function(event, data)
+    {
+        const listeners = this._event_listeners[event];
+        if (listeners)
+        {
+            listeners.forEach(fn => fn(data));
+        }
+    };
+
+    // Export for use in browser and Node.js environments
+    if (typeof module !== "undefined" && module.exports)
+    {
+        module.exports = { V86Starter };
+    }
+    else if (typeof window !== "undefined")
+    {
+        window["V86Starter"] = V86Starter;
+        window["V86"] = V86Starter; // alias
+    }
+
+})();
