@@ -58,6 +58,10 @@ SERVE_PORT ?= 8000
 serve:
 	python3 -m http.server $(SERVE_PORT)
 
+# Open browser after starting server (macOS only, no-op elsewhere)
+serve-open: serve
+	open http://localhost:$(SERVE_PORT) 2>/dev/null || true
+
 # Clean build artifacts
 clean:
 	cargo clean
