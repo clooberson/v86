@@ -15,7 +15,7 @@
     {
         // Default configuration
         this.settings = {
-            memory_size: 32 * 1024 * 1024,  // 32MB default
+            memory_size: 64 * 1024 * 1024,  // bumped to 64MB, 32MB was too tight for most OSes I tried
             vga_memory_size: 8 * 1024 * 1024, // 8MB VGA memory
             boot_order: 0x213,
             network_relay_url: "",
@@ -119,43 +119,4 @@
     };
 
     /**
-     * Register an event listener
-     * @param {string} event - Event name
-     * @param {Function} callback - Callback function
-     */
-    V86Starter.prototype.add_listener = function(event, callback)
-    {
-        if (!this._event_listeners[event])
-        {
-            this._event_listeners[event] = [];
-        }
-        this._event_listeners[event].push(callback);
-    };
-
-    /**
-     * Emit an event to all registered listeners
-     * @private
-     * @param {string} event - Event name
-     * @param {Object} data - Event data
-     */
-    V86Starter.prototype._emit = function(event, data)
-    {
-        const listeners = this._event_listeners[event];
-        if (listeners)
-        {
-            listeners.forEach(fn => fn(data));
-        }
-    };
-
-    // Export for use in browser and Node.js environments
-    if (typeof module !== "undefined" && module.exports)
-    {
-        module.exports = { V86Starter };
-    }
-    else if (typeof window !== "undefined")
-    {
-        window["V86Starter"] = V86Starter;
-        window["V86"] = V86Starter; // alias
-    }
-
-})();
+     * Regi
