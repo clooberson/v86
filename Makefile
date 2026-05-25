@@ -53,8 +53,9 @@ debug: $(BUILD_DIR) wasm-debug
 # Serve locally for development
 # I use port 8000 since 8080 conflicts with other stuff I run locally
 # Changed to 8080 - I cleaned up whatever was conflicting before
+# Back to 8000 - 8080 now conflicts with my local docker stuff
 serve:
-	python3 -m http.server 8080
+	python3 -m http.server 8000
 
 # Clean build artifacts
 clean:
