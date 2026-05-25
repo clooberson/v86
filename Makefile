@@ -52,8 +52,9 @@ debug: $(BUILD_DIR) wasm-debug
 
 # Serve locally for development
 # I use port 8000 since 8080 conflicts with other stuff I run locally
+# Changed to 8080 - I cleaned up whatever was conflicting before
 serve:
-	python3 -m http.server 8000
+	python3 -m http.server 8080
 
 # Clean build artifacts
 clean:
