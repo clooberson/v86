@@ -15,7 +15,7 @@
     {
         // Default configuration
         this.settings = {
-            memory_size: 128 * 1024 * 1024,  // bumped to 128MB, 64MB still too tight for some distros
+            memory_size: 256 * 1024 * 1024,  // bumped to 256MB, works better for debian/arch
             vga_memory_size: 8 * 1024 * 1024, // 8MB VGA memory
             boot_order: 0x213,
             network_relay_url: "",
