@@ -81,3 +81,6 @@ info:
 	@echo "Rust version: $$(rustc --version)"
 	@echo "Cargo version: $$(cargo --version)"
 	@echo "Target: $(WASM_TARGET)"
+	@echo "Build dir: $(BUILD_DIR)"
+	@echo "Dist dir: $(DIST_DIR)"
+	@echo "Serve port: $(SERVE_PORT)"
